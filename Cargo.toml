@@ -1,0 +1,16 @@
+[package]
+name = "revm-local"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.82"
+ethers-core = "2.0.14"
+ethers-providers = "2.0.14"
+indicatif = "0.17.8"
+revm = { version = "8.0.0", features = ["ethersdb", "std", "serde-json"] }
+revm-interpreter = "4.0.0"
+revm-primitives = "3.1.1"
+tokio = "1.37.0"
