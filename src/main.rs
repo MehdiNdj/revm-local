@@ -4,17 +4,17 @@ use ethers_providers::{Http, Provider};
 use indicatif::ProgressBar;
 use revm::db::{CacheDB, EthersDB, StateBuilder};
 use revm::primitives::{Address, TransactTo, U256};
-use revm::{inspector_handle_register, Evm};
+use revm::{inspector_handle_register, Evm, GetInspector};
 use revm::inspectors::TracerEip3155;
-use std::fs::OpenOptions;
-use std::io::BufWriter;
-use std::io::Write;
+use revm_primitives::Output;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
+use std::io::Cursor;
+use std::io::{Read, Write};
 
 macro_rules! local_fill {
-    ($left:expr, $right:expr, $fun:expr) => {
+    ($left:expr, $right:expr, $fun:expr)     => {
         if let Some(right) = $right {
             $left = $fun(right.0)
         }
@@ -27,11 +27,11 @@ macro_rules! local_fill {
 }
 
 struct FlushWriter {
-    writer: Arc<Mutex<BufWriter<std::fs::File>>>,
+    pub writer: Arc<Mutex<std::io::Cursor<Vec<u8>>>>,
 }
 
 impl FlushWriter {
-    fn new(writer: Arc<Mutex<BufWriter<std::fs::File>>>) -> Self {
+    fn new(writer: Arc<Mutex<std::io::Cursor<Vec<u8>>>>) -> Self {
         Self { writer }
     }
 }
@@ -149,41 +149,30 @@ async fn main() -> anyhow::Result<()> {
             })
             .build();
 
-        use std::io::Cursor;
-        
+
         // Construct the file writer to write the trace to
         let tx_number = tx.transaction_index.unwrap().0[0];
-        let cursor = Cursor::new(Vec::new());
-        let inner = Arc::new(Mutex::new(BufWriter::new(
-            cursor
-        )));
-        let mut innerclone = inner.clone();
-        let writer = Cursor::flush(&mut innerclone);
-        inner.lock().unwrap().get_ref();
-
-        /* let file_name = format!("traces/{}.json", tx_number);
-        let write = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(file_name);
-        let inner = Arc::new(Mutex::new(BufWriter::new(
-            write.expect("Failed to open file"),
-        )));
+        let write = Cursor::new(Vec::new());
+        let inner = Arc::new(Mutex::new(
+            write,
+        ));
         let writer = FlushWriter::new(Arc::clone(&inner));
-        */
-
         // Inspect and commit the transaction to the EVM
-        evm.context.external.set_writer(Box::new(writer));
+        evm.context.external.set_writer(Box::new(writer));       
         if let Err(error) = evm.transact_commit() {
             println!("Got error: {:?}", error);
         }
 
-        /*
-        // Flush the file writer
-        inner.lock().unwrap().flush().expect("Failed to flush file");
-        */
+        dbg!(&tx_number);
+        let tmp = inner.lock().unwrap();
+        let mut value = String::from_utf8(tmp.get_ref().to_vec()).unwrap();
 
+        // They don't respect JSON standard so we need some patching here
+        value = value.replace("\n", ",");
+        value = "[".to_string() + &value[..(value.len()-1)] + "]"; // we remove the trailing comma and have everything in a array
+
+        let value: serde_json::Value = serde_json::from_str(&value).unwrap();
+        dbg!(&value);
 
         console_bar.inc(1);
     }
