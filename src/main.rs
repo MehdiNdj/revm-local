@@ -172,7 +172,9 @@ async fn main() -> anyhow::Result<()> {
         value = "[".to_string() + &value[..(value.len()-1)] + "]"; // we remove the trailing comma and have everything in a array
 
         let value: serde_json::Value = serde_json::from_str(&value).unwrap();
-        dbg!(&value);
+        dbg!(&value.get(0));
+
+        // TODO: seek for opcodes CREATE2 in `value`
 
         console_bar.inc(1);
     }
