@@ -4,14 +4,14 @@ use ethers_providers::{Http, Provider};
 use indicatif::ProgressBar;
 use revm::db::{CacheDB, EthersDB, StateBuilder};
 use revm::primitives::{Address, TransactTo, U256};
-use revm::{inspector_handle_register, Evm, GetInspector};
+use revm::{inspector_handle_register, Evm};
 use revm::inspectors::TracerEip3155;
-use revm_primitives::Output;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
 use std::io::Cursor;
-use std::io::{Read, Write};
+use std::io::Write;
+use serde_json::json;
 
 macro_rules! local_fill {
     ($left:expr, $right:expr, $fun:expr)     => {
@@ -50,7 +50,7 @@ impl Write for FlushWriter {
 async fn main() -> anyhow::Result<()> {
     // Create ethers client and wrap it in Arc<M>
     let client = Provider::<Http>::try_from(
-        "https://eth.llamarpc.com",
+        "https://cloudflare-eth.com",
     )?;
     let client = Arc::new(client);
 
@@ -169,12 +169,38 @@ async fn main() -> anyhow::Result<()> {
 
         // They don't respect JSON standard so we need some patching here
         value = value.replace("\n", ",");
+        if value.len() == 0 {
+            continue;
+        }
         value = "[".to_string() + &value[..(value.len()-1)] + "]"; // we remove the trailing comma and have everything in a array
 
+        // CREATE2 finder using opcodes
         let value: serde_json::Value = serde_json::from_str(&value).unwrap();
-        dbg!(&value.get(0));
 
-        // TODO: seek for opcodes CREATE2 in `value`
+        let mut create2pcnum: u64 = 0;
+        for o in value.as_array().unwrap(){
+            let opname = o.get("opName");
+            if let Some(r) = opname {
+                if *r == json!("CREATE2") {
+                    create2pcnum = o.get("pc").unwrap().as_u64().unwrap();
+                    println!("Found CREATE2 contract");
+                }
+
+            }
+            if create2pcnum > 0 {
+                dbg!(o);
+                let pcnum: u64 = o.get("pc").unwrap().as_u64().unwrap();
+                if pcnum == create2pcnum + 1 {
+                    let stack = o.get("stack").unwrap().as_array().expect("").last();
+                    match stack {
+                        Some(value) => println!("Found CREATE2 contract's address: {}", value),
+                        None => println!("CREATE2 contract's address not found"),
+                    }
+                    create2pcnum = 0;
+                    break;
+                }
+            }
+        };
 
         console_bar.inc(1);
     }
